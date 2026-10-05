@@ -137,6 +137,9 @@ public class PlayerHealth : MonoBehaviour
                 maxHealth
             );
 
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayPlayerDamage();
+
         Debug.Log(
             "Player HP: " +
             currentHealth +

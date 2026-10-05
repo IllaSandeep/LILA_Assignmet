@@ -54,9 +54,6 @@ public class PauseManager : MonoBehaviour
         if (settingsPanel != null)
             settingsPanel.SetActive(false);
 
-        if (pausePanel != null && pauseSettingsButton == null)
-            pauseSettingsButton = CreateButton(pausePanel.transform, "SettingsButton", "SETTINGS", 0f, -80f);
-
         BindButtons();
     }
 
@@ -117,42 +114,6 @@ public class PauseManager : MonoBehaviour
 
         if (watchAdButton != null)
             watchAdButton.onClick.AddListener(ResumeAfterMockAd);
-    }
-
-    private TMP_Text CreateLabel(Transform parent, string objectName, string value, float y, float fontSize)
-    {
-        GameObject labelObject = new GameObject(objectName, typeof(RectTransform), typeof(TextMeshProUGUI));
-        RectTransform rect = (RectTransform)labelObject.transform;
-        rect.SetParent(parent, false);
-        rect.anchorMin = new Vector2(0.5f, 0.5f);
-        rect.anchorMax = new Vector2(0.5f, 0.5f);
-        rect.anchoredPosition = new Vector2(0f, y);
-        rect.sizeDelta = new Vector2(700f, 70f);
-
-        TextMeshProUGUI label = labelObject.GetComponent<TextMeshProUGUI>();
-        label.text = value;
-        label.fontSize = fontSize;
-        label.alignment = TextAlignmentOptions.Center;
-        label.raycastTarget = false;
-        return label;
-    }
-
-    private Button CreateButton(Transform parent, string objectName, string label, float x, float y)
-    {
-        GameObject buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button));
-        RectTransform rect = (RectTransform)buttonObject.transform;
-        rect.SetParent(parent, false);
-        rect.anchorMin = new Vector2(0.5f, 0.5f);
-        rect.anchorMax = new Vector2(0.5f, 0.5f);
-        rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(300f, 78f);
-
-        Image image = buttonObject.GetComponent<Image>();
-        image.color = new Color(0.08f, 0.18f, 0.3f, 1f);
-        Button button = buttonObject.GetComponent<Button>();
-        button.targetGraphic = image;
-        CreateLabel(buttonObject.transform, "Label", label, 0f, 26f);
-        return button;
     }
 
     public void TogglePause()
@@ -235,6 +196,9 @@ public class PauseManager : MonoBehaviour
         if (!isGameOver || runManager == null || playerHealth == null)
             return;
 
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.ResumeGameplayAudio();
+
         playerHealth.ReviveFromMockAd();
         runManager.ResumeAfterMockAd();
         isGameOver = false;
@@ -248,6 +212,9 @@ public class PauseManager : MonoBehaviour
 
     private void HandleRunEnded()
     {
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayGameOver();
+
         isGameOver = true;
         isPaused = false;
         Time.timeScale = 0f;

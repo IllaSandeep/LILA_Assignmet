@@ -189,6 +189,8 @@ public class NemesisManager : MonoBehaviour
     private IEnumerator SpawnAfterWarning()
     {
         spawnWarningInProgress = true;
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayNemesisWarning();
         SetWarningMessage(warningStartMessage);
         yield return new WaitForSeconds(spawnWarningDuration * 0.5f);
         SetWarningMessage(warningApproachingMessage);
@@ -389,6 +391,9 @@ public class NemesisManager : MonoBehaviour
                 spawnPosition,
                 Quaternion.identity
             );
+
+        if (currentNemesisObject != null && SoundManager.Instance != null)
+            SoundManager.Instance.PlayNemesisSpawn();
 
         NemesisController controller =
             currentNemesisObject

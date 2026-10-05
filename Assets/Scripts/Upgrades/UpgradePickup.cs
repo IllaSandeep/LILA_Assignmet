@@ -62,6 +62,9 @@ public class UpgradePickup : MonoBehaviour
             abilityType
         );
 
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayPowerUp();
+
         UpgradeSpawner spawner =
             FindFirstObjectByType<UpgradeSpawner>();
 

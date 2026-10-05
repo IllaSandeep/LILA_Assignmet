@@ -1768,6 +1768,7 @@ GameObject:
   - component: {fileID: 470682767}
   - component: {fileID: 470682766}
   - component: {fileID: 470682765}
+  - component: {fileID: 880000004}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -1850,6 +1851,40 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 77a47ac81053244ed879c432ed006e74, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
+--- !u!114 &880000004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 470682764}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 91d4056c07c34171956a9e31ad7e62fd, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::SoundManager
+  musicSource: {fileID: 0}
+  sfxSource: {fileID: 0}
+  backgroundMusicClip: {fileID: 8300000, guid: 0108804f53dcc4a94ba0b7a277abad27, type: 3}
+  musicVolume: 0.64
+  playerShootClip: {fileID: 8300000, guid: b29a8a2f2fbce475f9198c4b3f965ff0, type: 3}
+  playerDamageClip: {fileID: 8300000, guid: 533938d95ee2f42369052f70d17808a9, type: 3}
+  enemyHitClip: {fileID: 8300000, guid: e2c0d0c2baf9149a6890628996df48e6, type: 3}
+  enemyDeathClip: {fileID: 8300000, guid: 2fcb01f6bc7fd4c53b0ec6d5b21b7fa2, type: 3}
+  powerUpClip: {fileID: 8300000, guid: e07d6fe4e394848ec8e762e49200b569, type: 3}
+  levelUpClip: {fileID: 8300000, guid: 678e486452aa94ee385184c1d7bf8b51, type: 3}
+  nemesisWarningClip: {fileID: 8300000, guid: fe596324206af4c19b76dbef89131cb1, type: 3}
+  nemesisSpawnClip: {fileID: 8300000, guid: 551beb3606c94434a929e13c16017581, type: 3}
+  heavyImpactClip: {fileID: 8300000, guid: a63a32f8feae64c9eba512ef0ddb4a93, type: 3}
+  gameOverClip: {fileID: 0}
+  sfxVolume: 0.64
+  uiClickClip: {fileID: 8300000, guid: de2ea59bd921147e5b7b3c4d1bc956d3, type: 3}
+  playerShootCooldown: 0.1
+  enemyHitCooldown: 0.06
+  enemyDeathCooldown: 0.06
+  playerDamageCooldown: 0.15
+  heavyImpactCooldown: 0.08
+  uiClickCooldown: 0.08
 --- !u!4 &470682769
 Transform:
   m_ObjectHideFlags: 0

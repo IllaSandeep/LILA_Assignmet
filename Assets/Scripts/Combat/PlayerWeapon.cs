@@ -151,6 +151,9 @@ public class PlayerWeapon : MonoBehaviour
 
             if (heavyShotActive)
                 projectileScript.SetHeavyShot();
+
+            if (SoundManager.Instance != null)
+                SoundManager.Instance.PlayPlayerShoot();
         }
 
         if (behaviorTracker != null)

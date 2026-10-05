@@ -60,6 +60,9 @@ public class PlayerExperience : MonoBehaviour
     {
         level++;
 
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayLevelUp();
+
         xpToNextLevel =
             CalculateXPRequired(level);
 

@@ -167,7 +167,8 @@ public class Projectile : MonoBehaviour
         // ----------------------------------------------
 
         enemy.TakeDamage(
-            damage
+            damage,
+            heavyShot
         );
 
         // ----------------------------------------------

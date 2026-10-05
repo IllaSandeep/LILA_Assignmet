@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -14,8 +13,6 @@ public sealed class SettingsPanelController : MonoBehaviour
     private const string VibrationKey = "SETTINGS_VIBRATION_ENABLED";
     private const float DefaultVolume = 0.64f;
 
-    private static readonly Dictionary<AudioSource, float> MusicSources = new Dictionary<AudioSource, float>();
-    private static readonly Dictionary<AudioSource, float> SfxSources = new Dictionary<AudioSource, float>();
     private static bool settingsLoaded;
     private static float musicVolume = DefaultVolume;
     private static float sfxVolume = DefaultVolume;
@@ -27,6 +24,7 @@ public sealed class SettingsPanelController : MonoBehaviour
     [SerializeField] private TMP_FontAsset uiFont;
 
     [Header("Controls")]
+    [Tooltip("Keep enabled for the Main Menu. Disable it when the Settings controls are authored in the scene.")]
     [SerializeField] private bool buildControlsAtRuntime = true;
     [SerializeField] private Slider musicSlider;
     [SerializeField] private Slider sfxSlider;
@@ -74,7 +72,7 @@ public sealed class SettingsPanelController : MonoBehaviour
         musicSlider.SetValueWithoutNotify(musicVolume);
         sfxSlider.SetValueWithoutNotify(sfxVolume);
         UpdateVibrationVisual();
-        ApplyVolumesToRegisteredSources();
+        ApplyVolumesToSoundManager();
     }
 
     private void BuildControls()
@@ -103,6 +101,16 @@ public sealed class SettingsPanelController : MonoBehaviour
         resetSettingsButton.onClick.AddListener(ResetSettings);
         backButton.onClick.AddListener(CloseSettings);
         closeButton.onClick.AddListener(CloseSettings);
+
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.HookUiControl(musicSlider);
+            SoundManager.Instance.HookUiControl(sfxSlider);
+            SoundManager.Instance.HookUiControl(vibrationButton);
+            SoundManager.Instance.HookUiControl(resetSettingsButton);
+            SoundManager.Instance.HookUiControl(backButton);
+            SoundManager.Instance.HookUiControl(closeButton);
+        }
     }
 
     private Slider CreateVolumeSlider(string objectName, float x, float y)
@@ -253,7 +261,8 @@ public sealed class SettingsPanelController : MonoBehaviour
         musicVolume = Mathf.Clamp01(value);
         PlayerPrefs.SetFloat(MusicKey, musicVolume);
         PlayerPrefs.Save();
-        ApplyVolumesToSources(MusicSources, musicVolume);
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.SetMusicVolume(musicVolume);
     }
 
     private void SetSfxVolume(float value)
@@ -261,7 +270,8 @@ public sealed class SettingsPanelController : MonoBehaviour
         sfxVolume = Mathf.Clamp01(value);
         PlayerPrefs.SetFloat(SfxKey, sfxVolume);
         PlayerPrefs.Save();
-        ApplyVolumesToSources(SfxSources, sfxVolume);
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.SetSfxVolume(sfxVolume);
     }
 
     private void ToggleVibration()
@@ -285,7 +295,7 @@ public sealed class SettingsPanelController : MonoBehaviour
         PlayerPrefs.SetInt(VibrationKey, 1);
         PlayerPrefs.Save();
         UpdateVibrationVisual();
-        ApplyVolumesToRegisteredSources();
+        ApplyVolumesToSoundManager();
     }
 
     private void CloseSettings()
@@ -313,68 +323,20 @@ public sealed class SettingsPanelController : MonoBehaviour
         settingsLoaded = true;
     }
 
-    private static void ApplyVolumesToRegisteredSources()
+    private static void ApplyVolumesToSoundManager()
     {
-        ApplyVolumesToSources(MusicSources, musicVolume);
-        ApplyVolumesToSources(SfxSources, sfxVolume);
+        if (SoundManager.Instance == null)
+            return;
+
+        SoundManager.Instance.SetMusicVolume(musicVolume);
+        SoundManager.Instance.SetSfxVolume(sfxVolume);
     }
-
-    private static void ApplyVolumesToSources(Dictionary<AudioSource, float> sources, float volume)
-    {
-        List<AudioSource> destroyedSources = null;
-        foreach (KeyValuePair<AudioSource, float> item in sources)
-        {
-            if (item.Key == null)
-            {
-                if (destroyedSources == null)
-                    destroyedSources = new List<AudioSource>();
-                destroyedSources.Add(item.Key);
-                continue;
-            }
-
-            item.Key.volume = Mathf.Clamp01(item.Value * volume);
-        }
-
-        if (destroyedSources != null)
-        {
-            foreach (AudioSource source in destroyedSources)
-                sources.Remove(source);
-        }
-    }
-
-    /// <summary>Register a music AudioSource so its volume follows the Music slider.</summary>
-    public static void RegisterMusicSource(AudioSource source) => RegisterSource(source, MusicSources, MusicVolume);
-
-    /// <summary>Register an effects AudioSource so its volume follows the SFX slider.</summary>
-    public static void RegisterSfxSource(AudioSource source) => RegisterSource(source, SfxSources, SfxVolume);
-
-    public static void UnregisterMusicSource(AudioSource source) => UnregisterSource(source, MusicSources);
-    public static void UnregisterSfxSource(AudioSource source) => UnregisterSource(source, SfxSources);
 
     /// <summary>Call this when the game triggers haptics; it respects the saved toggle.</summary>
     public static void VibrateIfEnabled()
     {
         if (VibrationEnabled && Application.isMobilePlatform)
             Handheld.Vibrate();
-    }
-
-    private static void RegisterSource(AudioSource source, Dictionary<AudioSource, float> sources, float volume)
-    {
-        if (source == null)
-            return;
-
-        if (!sources.ContainsKey(source))
-            sources.Add(source, source.volume);
-        source.volume = Mathf.Clamp01(sources[source] * volume);
-    }
-
-    private static void UnregisterSource(AudioSource source, Dictionary<AudioSource, float> sources)
-    {
-        if (source != null && sources.TryGetValue(source, out float originalVolume))
-        {
-            source.volume = originalVolume;
-            sources.Remove(source);
-        }
     }
 
     private static Sprite circleSprite;

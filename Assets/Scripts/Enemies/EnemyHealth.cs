@@ -53,6 +53,16 @@ public class EnemyHealth : MonoBehaviour
 
     public void TakeDamage(float damage)
     {
+        ApplyDamage(damage, false);
+    }
+
+    public void TakeDamage(float damage, bool heavyHit)
+    {
+        ApplyDamage(damage, heavyHit);
+    }
+
+    private void ApplyDamage(float damage, bool heavyHit)
+    {
         // Do nothing if already dead.
         if (isDead)
             return;
@@ -70,6 +80,16 @@ public class EnemyHealth : MonoBehaviour
                 0f,
                 maxHealth
             );
+
+        if (heavyHit)
+        {
+            if (SoundManager.Instance != null)
+                SoundManager.Instance.PlayHeavyImpact();
+        }
+        else if (currentHealth > 0f && SoundManager.Instance != null)
+        {
+            SoundManager.Instance.PlayEnemyHit();
+        }
 
         Debug.Log(
             "Enemy HP: " +
@@ -94,6 +114,9 @@ public class EnemyHealth : MonoBehaviour
             return;
 
         isDead = true;
+
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayEnemyDeath();
 
         Debug.Log(
             "ENEMY DIED"
