@@ -6432,7 +6432,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NemesisManager
   nemesisPrefab: {fileID: 789554164497749554, guid: 985b3f338512b4deaa147362118144c0, type: 3}
-  spawnDistance: 10
+  spawnDistance: 8
   spawnWarningDuration: 10
   warningStartMessage: NEMESIS SIGNAL DETECTED
   warningApproachingMessage: ADAPTIVE THREAT APPROACHING
@@ -6450,6 +6450,7 @@ MonoBehaviour:
   predictionMultiplierPerEncounter: 0.08
   maximumEscalationMultiplier: 1.5
   enableAIDebug: 0
+  debugNemesis: 0
   player: {fileID: 1775828374}
 --- !u!4 &1129015966
 Transform:

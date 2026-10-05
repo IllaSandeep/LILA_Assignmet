@@ -8,7 +8,8 @@ public class NemesisManager : MonoBehaviour
     [SerializeField] private GameObject nemesisPrefab;
 
     [Header("Spawn")]
-    [SerializeField] private float spawnDistance = 10f;
+    [Tooltip("Radial distance from the current player position. Kept between 7 and 10 world units.")]
+    [Range(7f, 10f)] [SerializeField] private float spawnDistance = 8f;
     [Tooltip("The warning begins this many seconds before the scheduled Nemesis spawn.")]
     [Min(0f)] [SerializeField] private float spawnWarningDuration = 10f;
     [SerializeField] private string warningStartMessage = "NEMESIS SIGNAL DETECTED";
@@ -31,6 +32,7 @@ public class NemesisManager : MonoBehaviour
     [SerializeField] private float predictionMultiplierPerEncounter = 0.08f;
     [SerializeField] private float maximumEscalationMultiplier = 1.5f;
     [SerializeField] private bool enableAIDebug;
+    [SerializeField] private bool debugNemesis;
 
     [Header("Player")]
     [SerializeField] private Transform player;
@@ -46,6 +48,7 @@ public class NemesisManager : MonoBehaviour
     private GameObject currentNemesisObject;
 
     private float nextNemesisTime;
+    private bool timerInitialized;
     private int nemesisCount;
     private bool spawnWarningInProgress;
     private float nextBehaviorEvaluationTime;
@@ -54,10 +57,7 @@ public class NemesisManager : MonoBehaviour
 
     private void Start()
     {
-        FindPlayer();
-
-        runManager =
-            FindFirstObjectByType<RunManager>();
+        FindRunManager();
 
         if (runManager == null)
         {
@@ -68,71 +68,53 @@ public class NemesisManager : MonoBehaviour
             return;
         }
 
-        nextNemesisTime =
-            runManager.FirstNemesisSpawnTime;
-        nextBehaviorEvaluationTime = Mathf.Max(behaviorEvaluationInterval, nextNemesisTime);
+        FindPlayer();
+    }
 
-        Debug.Log(
-            "===== NEMESIS MANAGER STARTED =====\n" +
-            "First Nemesis at: " +
-            nextNemesisTime +
-            " seconds"
-        );
+    private void FindRunManager()
+    {
+        RunManager[] candidates = FindObjectsByType<RunManager>(FindObjectsSortMode.None);
+        runManager = null;
+        foreach (RunManager candidate in candidates)
+        {
+            if (candidate.gameObject.scene == gameObject.scene)
+            {
+                runManager = candidate;
+                return;
+            }
+        }
     }
 
     private void Update()
     {
-        if (Time.timeScale <= 0f)
-            return;
-
         if (runManager == null)
-        {
-            runManager =
-                FindFirstObjectByType<RunManager>();
+            FindRunManager();
 
+        if (runManager == null || !runManager.RunInitialized || !runManager.RunActive || Time.timeScale <= 0f)
             return;
-        }
 
-        if (player == null)
+        if (!timerInitialized)
+            InitializeRunTimer();
+
+        if (!IsCurrentPlayer(player))
         {
             FindPlayer();
-            return;
+            if (!IsCurrentPlayer(player))
+                return;
         }
 
         EvaluatePlayerBehaviorIfDue();
 
-        /*
-         * Do not spawn another Nemesis while the
-         * current Nemesis is still alive.
-         */
+        // Clear a defeated/destroyed Nemesis, but do not let it reset the
+        // next scheduled spawn time.
         if (currentNemesisObject != null)
         {
             EnemyHealth currentHealth =
                 currentNemesisObject
                     .GetComponent<EnemyHealth>();
 
-            if (
-                currentHealth != null &&
-                !currentHealth.IsDead()
-            )
-            {
-                return;
-            }
-
-            /*
-             * The previous Nemesis has died.
-             * The object will be destroyed by EnemyHealth,
-             * so clear our reference.
-             */
-            currentNemesisObject = null;
-
-            /*
-             * Schedule the next Nemesis relative to
-             * the current run time.
-             */
-            nextNemesisTime =
-                runManager.ElapsedTime +
-                runManager.NemesisInterval;
+            if (!currentNemesisObject.activeInHierarchy || (currentHealth != null && currentHealth.IsDead()))
+                currentNemesisObject = null;
         }
 
         float elapsedTime =
@@ -144,6 +126,19 @@ public class NemesisManager : MonoBehaviour
         )
         {
             BeginNemesisSpawn();
+        }
+    }
+
+    private void InitializeRunTimer()
+    {
+        timerInitialized = true;
+        nextNemesisTime = runManager.FirstNemesisSpawnTime;
+        nextBehaviorEvaluationTime = Mathf.Max(behaviorEvaluationInterval, nextNemesisTime);
+
+        if (debugNemesis)
+        {
+            Debug.Log($"[NEMESIS] Run started at time: {runManager.ElapsedTime:0.00}s");
+            Debug.Log($"[NEMESIS] First spawn timer: {runManager.ElapsedTime:0.00} / {runManager.FirstNemesisSpawnTime:0.00}s");
         }
     }
 
@@ -177,31 +172,56 @@ public class NemesisManager : MonoBehaviour
         if (spawnWarningInProgress)
             return;
 
-        if (spawnWarningDuration <= 0f)
+        float warningDuration = Mathf.Min(
+            spawnWarningDuration,
+            Mathf.Max(0f, nextNemesisTime - runManager.ElapsedTime)
+        );
+
+        if (warningDuration <= 0f)
         {
-            GenerateAndSpawnNemesis();
+            spawnWarningInProgress = true;
+            CompleteScheduledSpawn();
             return;
         }
 
-        StartCoroutine(SpawnAfterWarning());
+        spawnWarningInProgress = true;
+        StartCoroutine(SpawnAfterWarning(warningDuration));
     }
 
-    private IEnumerator SpawnAfterWarning()
+    private IEnumerator SpawnAfterWarning(float warningDuration)
     {
-        spawnWarningInProgress = true;
+        if (debugNemesis)
+            Debug.Log($"[NEMESIS] Warning triggered at run time: {runManager.ElapsedTime:0.00}s");
+
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlayNemesisWarning();
         SetWarningMessage(warningStartMessage);
-        yield return new WaitForSeconds(spawnWarningDuration * 0.5f);
+        yield return new WaitForSeconds(warningDuration * 0.5f);
         SetWarningMessage(warningApproachingMessage);
-        yield return new WaitForSeconds(spawnWarningDuration * 0.45f);
+        yield return new WaitForSeconds(warningDuration * 0.45f);
         SetWarningMessage(warningIncomingMessage);
-        yield return new WaitForSeconds(spawnWarningDuration * 0.05f);
+        yield return new WaitForSeconds(warningDuration * 0.05f);
+
+        // A long encounter may outlive the next scheduled spawn time. Keep
+        // the single pending timer and spawn as soon as the previous Nemesis dies.
+        while (runManager != null && runManager.RunInitialized && runManager.RunActive &&
+               (Time.timeScale <= 0f || HasLivingNemesis()))
+        {
+            yield return null;
+        }
+
+        if (runManager == null || !runManager.RunInitialized || !runManager.RunActive)
+        {
+            if (warningText != null)
+                warningText.gameObject.SetActive(false);
+            spawnWarningInProgress = false;
+            yield break;
+        }
 
         if (warningText != null)
             warningText.gameObject.SetActive(false);
-        spawnWarningInProgress = false;
-        GenerateAndSpawnNemesis();
+
+        CompleteScheduledSpawn();
     }
 
     private void SetWarningMessage(string message)
@@ -217,52 +237,96 @@ public class NemesisManager : MonoBehaviour
         }
     }
 
-    private void FindPlayer()
+    private bool FindPlayer()
     {
-        GameObject playerObject =
-            GameObject.FindGameObjectWithTag(
-                "Player"
-            );
-
-        if (playerObject == null)
-            return;
-
-        player =
-            playerObject.transform;
-
-        behaviorTracker =
-            playerObject.GetComponent<PlayerBehaviorTracker>();
-
-        nemesisProfile =
-            playerObject.GetComponent<NemesisProfile>();
-    }
-
-    private void GenerateAndSpawnNemesis()
-    {
-        /*
-         * Safety check.
-         * Never create a second Nemesis if one
-         * already exists.
-         */
-        if (currentNemesisObject != null)
+        // Search loaded active objects and scope the result to this scene.
+        // FindGameObjectWithTag can return a tagged object from another
+        // loaded scene, which is unsafe during scene transitions/restarts.
+        Transform[] candidates = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+        player = null;
+        foreach (Transform candidate in candidates)
         {
-            EnemyHealth currentHealth =
-                currentNemesisObject
-                    .GetComponent<EnemyHealth>();
-
-            if (
-                currentHealth != null &&
-                !currentHealth.IsDead()
-            )
+            if (IsCurrentPlayer(candidate))
             {
-                return;
+                player = candidate;
+                break;
             }
-
-            currentNemesisObject = null;
         }
 
-        if (player == null)
-            FindPlayer();
+        if (!IsCurrentPlayer(player))
+        {
+            behaviorTracker = null;
+            nemesisProfile = null;
+            return false;
+        }
+
+        behaviorTracker =
+            player.GetComponent<PlayerBehaviorTracker>();
+
+        nemesisProfile =
+            player.GetComponent<NemesisProfile>();
+
+        return true;
+    }
+
+    private bool IsCurrentPlayer(Transform candidate)
+    {
+        return candidate != null &&
+               candidate.gameObject.activeInHierarchy &&
+               candidate.CompareTag("Player") &&
+               candidate.gameObject.scene == gameObject.scene;
+    }
+
+    private bool HasLivingNemesis()
+    {
+        if (currentNemesisObject == null)
+            return false;
+
+        if (!currentNemesisObject.activeInHierarchy)
+            return false;
+
+        EnemyHealth health = currentNemesisObject.GetComponent<EnemyHealth>();
+        return health == null || !health.IsDead();
+    }
+
+    private void CompleteScheduledSpawn()
+    {
+        bool spawned = GenerateAndSpawnNemesis();
+        spawnWarningInProgress = false;
+
+        if (spawned)
+        {
+            // The interval is measured from this successful spawn event.
+            // This keeps a delayed encounter from making the following
+            // encounter arrive immediately after it.
+            nextNemesisTime = runManager.ElapsedTime + runManager.NemesisInterval;
+            if (debugNemesis)
+                Debug.Log($"[NEMESIS] Next scheduled spawn: {nextNemesisTime:0.00}s");
+        }
+        else
+        {
+            // A missing prefab/target should not cause a warning coroutine to
+            // restart every frame. Retry one interval from the failed attempt.
+            nextNemesisTime = runManager.ElapsedTime + runManager.NemesisInterval;
+            if (debugNemesis)
+                Debug.LogWarning($"[NEMESIS] Spawn failed; retry scheduled for {nextNemesisTime:0.00}s");
+        }
+    }
+
+    private bool GenerateAndSpawnNemesis()
+    {
+        if (HasLivingNemesis())
+            return false;
+
+        currentNemesisObject = null;
+
+        // Resolve the active player again at the actual spawn moment so this
+        // can never use a stale transform from an earlier run.
+        if (!FindPlayer())
+        {
+            Debug.LogError("NEMESIS MANAGER: Active Player in the current scene was not found!");
+            return false;
+        }
 
         if (behaviorTracker == null)
         {
@@ -271,7 +335,7 @@ public class NemesisManager : MonoBehaviour
                 "PlayerBehaviorTracker missing!"
             );
 
-            return;
+            return false;
         }
 
         if (nemesisProfile == null)
@@ -281,7 +345,7 @@ public class NemesisManager : MonoBehaviour
                 "NemesisProfile missing!"
             );
 
-            return;
+            return false;
         }
 
         Debug.Log(
@@ -317,36 +381,32 @@ public class NemesisManager : MonoBehaviour
                     : NemesisProfile.NemesisType.Balanced;
         }
 
-        if (currentNemesis == lastSpawnedNemesis)
-            repeatedNemesisCount++;
-        else
-            repeatedNemesisCount = 1;
-        lastSpawnedNemesis = currentNemesis;
-
-        nemesisCount++;
-
         Debug.Log(
             "NEW NEMESIS: " +
             currentNemesis
         );
 
-        /*
-         * Spawn the new Nemesis.
-         */
-        SpawnNemesis();
+        int upcomingNemesisCount = nemesisCount + 1;
+        GameObject spawnedNemesis = SpawnNemesis(upcomingNemesisCount);
+        if (spawnedNemesis == null)
+            return false;
 
-        /*
-         * We don't immediately schedule another Nemesis.
-         * The next one will be scheduled only after
-         * this Nemesis is defeated.
-         */
+        currentNemesisObject = spawnedNemesis;
+        if (currentNemesis == lastSpawnedNemesis)
+            repeatedNemesisCount++;
+        else
+            repeatedNemesisCount = 1;
+        lastSpawnedNemesis = currentNemesis;
+        nemesisCount = upcomingNemesisCount;
 
         Debug.Log(
             "================================"
         );
+
+        return true;
     }
 
-    private void SpawnNemesis()
+    private GameObject SpawnNemesis(int upcomingNemesisCount)
     {
         if (nemesisPrefab == null)
         {
@@ -355,17 +415,17 @@ public class NemesisManager : MonoBehaviour
                 "Nemesis Prefab is missing!"
             );
 
-            return;
+            return null;
         }
 
-        if (player == null)
+        if (!FindPlayer())
         {
             Debug.LogError(
                 "NEMESIS MANAGER: " +
-                "Player is missing!"
+                "Active Player in the current scene is missing!"
             );
 
-            return;
+            return null;
         }
 
         Vector2 spawnDirection =
@@ -380,27 +440,33 @@ public class NemesisManager : MonoBehaviour
                 Vector2.right;
         }
 
-        Vector2 spawnPosition =
-            (Vector2)player.position +
-            spawnDirection *
-            spawnDistance;
+        Vector3 playerPosition = player.position;
+        float actualSpawnDistance = Mathf.Clamp(spawnDistance, 7f, 10f);
+        Vector3 spawnPosition = playerPosition +
+                                new Vector3(spawnDirection.x, spawnDirection.y, 0f) * actualSpawnDistance;
 
-        currentNemesisObject =
-            Instantiate(
-                nemesisPrefab,
-                spawnPosition,
-                Quaternion.identity
-            );
+        GameObject spawnedNemesis = Instantiate(
+            nemesisPrefab,
+            spawnPosition,
+            Quaternion.identity
+        );
 
-        if (currentNemesisObject != null && SoundManager.Instance != null)
+        if (spawnedNemesis == null)
+            return null;
+
+        if (SoundManager.Instance != null)
             SoundManager.Instance.PlayNemesisSpawn();
 
         NemesisController controller =
-            currentNemesisObject
+            spawnedNemesis
                 .GetComponent<NemesisController>();
 
         if (controller != null)
         {
+            controller.SetPlayerTarget(player);
+            if (debugNemesis)
+                Debug.Log("[NEMESIS] Target assigned: Player");
+
             NemesisController.NemesisType controllerType =
                 ConvertNemesisType(
                     currentNemesis
@@ -410,12 +476,26 @@ public class NemesisManager : MonoBehaviour
                 controllerType
             );
 
-            float escalation = Mathf.Min(1f + Mathf.Max(0, nemesisCount - 1) * healthMultiplierPerEncounter, maximumEscalationMultiplier);
-            float speedEscalation = Mathf.Min(1f + Mathf.Max(0, nemesisCount - 1) * speedMultiplierPerEncounter, maximumEscalationMultiplier);
-            float damageEscalation = Mathf.Min(1f + Mathf.Max(0, nemesisCount - 1) * damageMultiplierPerEncounter, maximumEscalationMultiplier);
-            float predictionEscalation = Mathf.Min(1f + Mathf.Max(0, nemesisCount - 1) * predictionMultiplierPerEncounter, maximumEscalationMultiplier);
+            float escalation = Mathf.Min(1f + Mathf.Max(0, upcomingNemesisCount - 1) * healthMultiplierPerEncounter, maximumEscalationMultiplier);
+            float speedEscalation = Mathf.Min(1f + Mathf.Max(0, upcomingNemesisCount - 1) * speedMultiplierPerEncounter, maximumEscalationMultiplier);
+            float damageEscalation = Mathf.Min(1f + Mathf.Max(0, upcomingNemesisCount - 1) * damageMultiplierPerEncounter, maximumEscalationMultiplier);
+            float predictionEscalation = Mathf.Min(1f + Mathf.Max(0, upcomingNemesisCount - 1) * predictionMultiplierPerEncounter, maximumEscalationMultiplier);
             controller.SetEncounterScaling(escalation, speedEscalation, damageEscalation, predictionEscalation);
             controller.ConfigureLearning(adaptationStrength, profileLockDuration, behaviorTracker.BehaviorConfidence);
+        }
+        else
+        {
+            Debug.LogError("NEMESIS MANAGER: Spawned prefab is missing NemesisController!");
+            Destroy(spawnedNemesis);
+            return null;
+        }
+
+        if (debugNemesis)
+        {
+            Debug.Log($"[NEMESIS] Spawn triggered at run time: {runManager.ElapsedTime:0.00}s");
+            Debug.Log($"[NEMESIS] Spawn position: {spawnPosition.x:0.00},{spawnPosition.y:0.00}");
+            Debug.Log($"[NEMESIS] Player position: {playerPosition.x:0.00},{playerPosition.y:0.00}");
+            Debug.Log($"[NEMESIS] Distance from player: {Vector2.Distance(spawnPosition, playerPosition):0.00}");
         }
 
         Debug.Log(
@@ -426,6 +506,8 @@ public class NemesisManager : MonoBehaviour
             runManager.ElapsedTime.ToString("0.0") +
             "s"
         );
+
+        return spawnedNemesis;
     }
 
     private NemesisProfile.NemesisType GetVariationType(NemesisProfile.NemesisType type)

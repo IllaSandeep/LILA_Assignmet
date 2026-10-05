@@ -11,15 +11,24 @@ public class NemesisController : MonoBehaviour
         Disruptor
     }
 
+    private enum CombatState
+    {
+        Ranged,
+        Melee,
+        Dead
+    }
+
     [Header("Nemesis")]
     [SerializeField] private NemesisType nemesisType =
         NemesisType.Balanced;
 
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 2f;
+    [Min(0.1f)] [SerializeField] private float knockbackDamping = 12f;
 
     [Header("Combat Distance")]
-    [SerializeField] private float meleeRange = 1.5f;
+    [Min(0.1f)] [SerializeField] private float meleeEnterDistance = 2.5f;
+    [Min(0.1f)] [SerializeField] private float meleeExitDistance = 3.2f;
     [SerializeField] private float shootingRange = 6f;
 
     [Header("Hunter")]
@@ -52,6 +61,9 @@ public class NemesisController : MonoBehaviour
     [Header("Animation")]
     [SerializeField] private Animator animator;
 
+    [Header("Debug")]
+    [SerializeField] private bool debugNemesisAI;
+
     [Header("Target")]
     [SerializeField] private Transform player;
 
@@ -63,6 +75,10 @@ public class NemesisController : MonoBehaviour
     private EnemyHealth enemyHealth;
     private PlayerBehaviorTracker behaviorTracker;
     private PlayerAbilitySystem playerAbilitySystem;
+    private Rigidbody2D body;
+    private CombatState combatState = CombatState.Ranged;
+    private Vector2 requestedMovementVelocity;
+    private Vector2 externalKnockbackVelocity;
     private NemesisType adaptiveTarget;
     private float adaptiveTargetConfidence;
     private float adaptationStrength = 0.35f;
@@ -78,8 +94,19 @@ public class NemesisController : MonoBehaviour
 
     private void Awake()
     {
+        body = GetComponent<Rigidbody2D>();
         enemyHealth =
             GetComponent<EnemyHealth>();
+
+        // Nemesis motion is commanded by this controller. A dynamic body was
+        // allowing contacts and projectile impulses to fight that movement.
+        if (body != null)
+        {
+            body.bodyType = RigidbodyType2D.Kinematic;
+            body.gravityScale = 0f;
+            body.linearVelocity = Vector2.zero;
+            body.angularVelocity = 0f;
+        }
 
         if (animator == null)
         {
@@ -90,7 +117,8 @@ public class NemesisController : MonoBehaviour
 
     private void Start()
     {
-        FindPlayer();
+        if (!IsValidPlayer(player))
+            FindPlayer();
 
         meleeTimer =
             meleeCooldown;
@@ -109,10 +137,11 @@ public class NemesisController : MonoBehaviour
         if (Time.timeScale <= 0f)
             return;
 
-        if (player == null)
+        if (!IsValidPlayer(player))
         {
             FindPlayer();
-            return;
+            if (!IsValidPlayer(player))
+                return;
         }
 
         if (
@@ -120,6 +149,21 @@ public class NemesisController : MonoBehaviour
             enemyHealth.IsDead()
         )
         {
+            if (combatState != CombatState.Dead)
+            {
+                CombatState previousState = combatState;
+                combatState = CombatState.Dead;
+                requestedMovementVelocity = Vector2.zero;
+                externalKnockbackVelocity = Vector2.zero;
+                if (body != null)
+                {
+                    body.linearVelocity = Vector2.zero;
+                    body.angularVelocity = 0f;
+                }
+
+                if (debugNemesisAI)
+                    Debug.Log($"[NEMESIS AI] {previousState.ToString().ToUpperInvariant()} → DEAD");
+            }
             return;
         }
 
@@ -150,24 +194,48 @@ public class NemesisController : MonoBehaviour
         UpdateCombat();
     }
 
+    private void OnValidate()
+    {
+        meleeEnterDistance = Mathf.Max(0.1f, meleeEnterDistance);
+        meleeExitDistance = Mathf.Max(meleeEnterDistance + 0.1f, meleeExitDistance);
+    }
+
     private void FindPlayer()
     {
-        GameObject playerObject =
-            GameObject.FindGameObjectWithTag(
-                "Player"
-            );
+        Transform[] candidates = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+        foreach (Transform candidate in candidates)
+        {
+            if (IsValidPlayer(candidate))
+            {
+                SetPlayerTarget(candidate);
+                return;
+            }
+        }
+    }
 
-        if (playerObject == null)
+    private bool IsValidPlayer(Transform target)
+    {
+        return target != null &&
+               target.gameObject.activeInHierarchy &&
+               target.CompareTag("Player") &&
+               target.gameObject.scene == gameObject.scene;
+    }
+
+    public void SetPlayerTarget(Transform target)
+    {
+        if (!IsValidPlayer(target))
             return;
 
-        player =
-            playerObject.transform;
+        player = target;
+        playerHealth = target.GetComponent<PlayerHealth>();
+        behaviorTracker = target.GetComponent<PlayerBehaviorTracker>();
+        playerAbilitySystem = target.GetComponent<PlayerAbilitySystem>();
 
-        playerHealth =
-            playerObject.GetComponent<PlayerHealth>();
-        behaviorTracker = playerObject.GetComponent<PlayerBehaviorTracker>();
-        playerAbilitySystem = playerObject.GetComponent<PlayerAbilitySystem>();
+        if (debugNemesisAI)
+            Debug.Log($"[NEMESIS AI] target = {target.name}");
     }
+
+    public Transform PlayerTarget => player;
 
     private void UpdateCombat()
     {
@@ -177,43 +245,119 @@ public class NemesisController : MonoBehaviour
                 player.position
             );
 
-        // =========================================
-        // HUNTER
-        // =========================================
+        if (combatState == CombatState.Melee)
+        {
+            if (distance >= meleeExitDistance)
+                ChangeCombatState(CombatState.Ranged, distance);
+        }
+        else if (distance <= meleeEnterDistance)
+        {
+            ChangeCombatState(CombatState.Melee, distance);
+        }
 
+        requestedMovementVelocity = Vector2.zero;
+
+        if (combatState == CombatState.Melee)
+        {
+            UpdateMeleeCombat();
+        }
+        else if (combatState == CombatState.Ranged)
+        {
+            UpdateRangedCombat(distance);
+        }
+
+        ApplyRequestedMovement();
+    }
+
+    private void UpdateRangedCombat(float distance)
+    {
+        // Exactly one Nemesis type chooses movement while in ranged state.
         if (nemesisType == NemesisType.Hunter)
-        {
             UpdateHunter(distance);
-            return;
-        }
-
-        // =========================================
-        // TRAPPER
-        // =========================================
-
-        if (nemesisType == NemesisType.Trapper)
-        {
+        else if (nemesisType == NemesisType.Trapper)
             UpdateTrapper(distance);
-            return;
-        }
-
-        if (nemesisType == NemesisType.Interceptor)
-        {
+        else if (nemesisType == NemesisType.Interceptor)
             UpdateInterceptor(distance);
-            return;
-        }
-
-        if (nemesisType == NemesisType.Disruptor)
-        {
+        else if (nemesisType == NemesisType.Disruptor)
             UpdateDisruptor(distance);
-            return;
+        else
+            UpdateBalanced(distance);
+    }
+
+    private void UpdateMeleeCombat()
+    {
+        // No ranged positioning/retreat code runs in this state.
+        if (nemesisType == NemesisType.Trapper && trapTimer <= 0f)
+        {
+            SpawnTrapNearPlayer();
+            trapTimer = trapCooldown;
         }
 
-        // =========================================
-        // DEFAULT / BALANCED
-        // =========================================
+        if (nemesisType == NemesisType.Disruptor && IsPlayerUsingAbility())
+        {
+            if (trapTimer <= 0f)
+            {
+                SpawnTrapNearPlayer();
+                trapTimer = trapCooldown;
+            }
+            ShootAtPlayer(true);
+        }
 
-        UpdateBalanced(distance);
+        MeleeAttack();
+    }
+
+    private void ApplyRequestedMovement()
+    {
+        Vector2 movementVelocity = requestedMovementVelocity + externalKnockbackVelocity;
+        if (movementVelocity.sqrMagnitude > 0f)
+            transform.position += (Vector3)(movementVelocity * Time.deltaTime);
+
+        float damping = Mathf.Max(0.1f, knockbackDamping);
+        externalKnockbackVelocity = Vector2.Lerp(
+            externalKnockbackVelocity,
+            Vector2.zero,
+            1f - Mathf.Exp(-damping * Time.deltaTime)
+        );
+    }
+
+    private void ChangeCombatState(CombatState nextState, float distance)
+    {
+        if (combatState == nextState)
+            return;
+
+        CombatState previousState = combatState;
+        combatState = nextState;
+
+        if (nextState == CombatState.Melee && body != null)
+        {
+            body.linearVelocity = Vector2.zero;
+            body.angularVelocity = 0f;
+        }
+
+        if (nextState == CombatState.Melee)
+            PlayFightAnimation();
+        else if (nextState == CombatState.Ranged)
+        {
+            StopFightAnimation();
+        }
+
+        if (debugNemesisAI)
+        {
+            Vector2 movementVelocity = requestedMovementVelocity + externalKnockbackVelocity;
+            Debug.Log($"[NEMESIS AI] {previousState.ToString().ToUpperInvariant()} → {nextState.ToString().ToUpperInvariant()}");
+            Debug.Log($"[NEMESIS AI] {nextState.ToString().ToUpperInvariant()} distance = {distance:0.00}");
+            Debug.Log($"[NEMESIS AI] velocity = {movementVelocity.x:0.00},{movementVelocity.y:0.00}");
+        }
+    }
+
+    public void ApplyKnockback(Vector2 direction, float force)
+    {
+        if ((enemyHealth != null && enemyHealth.IsDead()) || direction.sqrMagnitude <= 0.0001f || force <= 0f)
+            return;
+
+        externalKnockbackVelocity += direction.normalized * force;
+        if (debugNemesisAI)
+            Debug.Log($"[NEMESIS AI] external knockback velocity = {externalKnockbackVelocity.x:0.00},{externalKnockbackVelocity.y:0.00}");
     }
 
     // =============================================
@@ -226,8 +370,6 @@ public class NemesisController : MonoBehaviour
         // Hunter immediately retreats.
         if (distance < hunterPreferredDistance)
         {
-            StopFightAnimation();
-
             RetreatFromPlayer();
 
             ShootAtPlayer();
@@ -244,8 +386,6 @@ public class NemesisController : MonoBehaviour
             hunterDistanceTolerance
         )
         {
-            StopFightAnimation();
-
             MoveTowardPlayer();
 
             ShootAtPlayer();
@@ -255,8 +395,6 @@ public class NemesisController : MonoBehaviour
 
         // Perfect Hunter distance.
         // Stay here and fire.
-        StopFightAnimation();
-
         ShootAtPlayer();
     }
 
@@ -268,12 +406,7 @@ public class NemesisController : MonoBehaviour
                 (Vector2)player.position
             ).normalized;
 
-        transform.position +=
-            (Vector3)(
-                direction *
-                hunterRetreatSpeed * movementMultiplier *
-                Time.deltaTime
-            );
+        requestedMovementVelocity = direction * hunterRetreatSpeed * movementMultiplier;
     }
 
     // =============================================
@@ -282,27 +415,10 @@ public class NemesisController : MonoBehaviour
 
     private void UpdateTrapper(float distance)
     {
-        // Close range
-        if (distance <= meleeRange + 0.5f)
-        {
-            if (trapTimer <= 0f)
-            {
-                SpawnTrapNearPlayer();
-
-                trapTimer =
-                    trapCooldown;
-            }
-
-            MeleeAttack();
-
-            return;
-        }
-
-        StopFightAnimation();
-
         // Long range
         if (distance >= shootingRange)
         {
+            MoveTowardPlayer();
             ShootAtPlayer();
 
             return;
@@ -311,7 +427,8 @@ public class NemesisController : MonoBehaviour
         // Approach a predicted lane to punish direct rushing without perfect prediction.
         Vector2 predicted = GetPredictedPlayerPosition();
         Vector2 away = ((Vector2)transform.position - predicted).normalized;
-        MoveToward(predicted + away * trapSpawnDistance, moveSpeed * (1f + adaptationLevel * 0.1f));
+        float desiredDistance = Mathf.Max(trapSpawnDistance, meleeExitDistance + 0.25f);
+        MoveToward(predicted + away * desiredDistance, moveSpeed * (1f + adaptationLevel * 0.1f));
     }
 
     // =============================================
@@ -320,17 +437,9 @@ public class NemesisController : MonoBehaviour
 
     private void UpdateBalanced(float distance)
     {
-        if (distance <= meleeRange)
-        {
-            MeleeAttack();
-
-            return;
-        }
-
-        StopFightAnimation();
-
         if (distance >= shootingRange)
         {
+            MoveTowardPlayer();
             ShootAtPlayer();
 
             return;
@@ -341,12 +450,6 @@ public class NemesisController : MonoBehaviour
 
     private void UpdateInterceptor(float distance)
     {
-        if (distance <= meleeRange)
-        {
-            MeleeAttack();
-            return;
-        }
-
         if (repositionTimer <= 0f && distance < hunterPreferredDistance)
         {
             burstTimer = 0.45f;
@@ -375,9 +478,7 @@ public class NemesisController : MonoBehaviour
             ShootAtPlayer(true);
         }
 
-        if (distance <= meleeRange)
-            MeleeAttack();
-        else if (abilityActive || distance >= shootingRange)
+        if (abilityActive || distance >= shootingRange)
             MoveToward(GetPredictedPlayerPosition(), moveSpeed * 0.8f);
         else
             MoveTowardPlayer();
@@ -395,19 +496,15 @@ public class NemesisController : MonoBehaviour
                 (Vector2)transform.position
             ).normalized;
 
-        transform.position +=
-            (Vector3)(
-                    direction *
-                    moveSpeed * movementMultiplier *
-                    (1f + adaptationLevel * 0.12f) *
-                    Time.deltaTime
-            );
+        requestedMovementVelocity = direction *
+                                    moveSpeed * movementMultiplier *
+                                    (1f + adaptationLevel * 0.12f);
     }
 
     private void MoveToward(Vector2 target, float speed)
     {
         Vector2 direction = (target - (Vector2)transform.position).normalized;
-        transform.position += (Vector3)(direction * speed * movementMultiplier * Time.deltaTime);
+        requestedMovementVelocity = direction * speed * movementMultiplier;
     }
 
     private Vector2 GetPredictedPlayerPosition()
@@ -445,8 +542,6 @@ public class NemesisController : MonoBehaviour
     {
         if (meleeTimer > 0f)
             return;
-
-        PlayFightAnimation();
 
         if (playerHealth != null)
         {
@@ -597,13 +692,8 @@ public class NemesisController : MonoBehaviour
         if (animator == null)
             return;
 
-        animator.ResetTrigger(
-            "Fight"
-        );
-
-        animator.SetTrigger(
-            "Fight"
-        );
+        animator.ResetTrigger("Fight");
+        animator.SetTrigger("Fight");
     }
 
     private void StopFightAnimation()
@@ -611,17 +701,8 @@ public class NemesisController : MonoBehaviour
         if (animator == null)
             return;
 
-        AnimatorStateInfo state =
-            animator.GetCurrentAnimatorStateInfo(0);
-
-        if (state.IsName("Fight"))
-        {
-            animator.Play(
-                "Idle",
-                0,
-                0f
-            );
-        }
+        animator.ResetTrigger("Fight");
+        animator.Play("Idle", 0, 0f);
     }
 
     public void PlayDeathAnimation()

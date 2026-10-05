@@ -177,22 +177,26 @@ public class Projectile : MonoBehaviour
 
         if (heavyShot)
         {
-            Rigidbody2D enemyRb =
-                other.GetComponent<Rigidbody2D>();
+            Vector2 knockbackDirection =
+                (
+                    (Vector2)other.transform.position -
+                    (Vector2)transform.position
+                ).normalized;
 
-            if (enemyRb != null)
+            NemesisController nemesisController =
+                other.GetComponent<NemesisController>();
+
+            if (nemesisController != null)
             {
-                Vector2 knockbackDirection =
-                    (
-                        (Vector2)other.transform.position -
-                        (Vector2)transform.position
-                    ).normalized;
-
-                enemyRb.AddForce(
-                    knockbackDirection *
-                    heavyKnockbackForce,
-                    ForceMode2D.Impulse
-                );
+                // Nemesis movement is kinematic and owned by its AI. Route
+                // intentional Heavy Shot knockback through that controller.
+                nemesisController.ApplyKnockback(knockbackDirection, heavyKnockbackForce);
+            }
+            else
+            {
+                Rigidbody2D enemyRb = other.GetComponent<Rigidbody2D>();
+                if (enemyRb != null)
+                    enemyRb.AddForce(knockbackDirection * heavyKnockbackForce, ForceMode2D.Impulse);
             }
         }
 

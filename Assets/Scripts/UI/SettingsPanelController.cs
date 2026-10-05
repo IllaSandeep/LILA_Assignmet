@@ -335,8 +335,10 @@ public sealed class SettingsPanelController : MonoBehaviour
     /// <summary>Call this when the game triggers haptics; it respects the saved toggle.</summary>
     public static void VibrateIfEnabled()
     {
+#if UNITY_ANDROID || UNITY_IOS
         if (VibrationEnabled && Application.isMobilePlatform)
             Handheld.Vibrate();
+#endif
     }
 
     private static Sprite circleSprite;

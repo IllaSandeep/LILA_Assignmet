@@ -29,6 +29,7 @@ public class RunManager : MonoBehaviour
     private bool runRewardAwarded;
 
     private bool runActive = true;
+    private bool runInitialized;
 
     private ScrapManager scrapManager;
     private NemesisManager nemesisManager;
@@ -39,11 +40,13 @@ public class RunManager : MonoBehaviour
     public float FirstNemesisSpawnTime => Mathf.Max(0f, firstNemesisSpawnTime);
     public float NemesisInterval => Mathf.Max(minimumNemesisInterval, nemesisInterval);
     public bool RunActive => runActive;
+    public bool RunInitialized => runInitialized;
     public int ScrapEarnedThisRun { get; private set; }
     public event Action RunEnded;
 
     private void Start()
     {
+        runInitialized = false;
         Time.timeScale = 1f;
 
         elapsedTime = 0f;
@@ -62,6 +65,7 @@ public class RunManager : MonoBehaviour
         UpdateTimerUI();
         UpdateKillsUI();
         UpdateStreakUI();
+        runInitialized = true;
 
         Debug.Log(
             "===== RUN STARTED =====\n" +

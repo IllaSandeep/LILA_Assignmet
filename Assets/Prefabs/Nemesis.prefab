@@ -105,7 +105,7 @@ Rigidbody2D:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 789554164497749554}
-  m_BodyType: 0
+  m_BodyType: 1
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
   m_UseAutoMass: 0
@@ -191,9 +191,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::NemesisController
   nemesisType: 1
   moveSpeed: 2
-  meleeRange: 1.5
+  knockbackDamping: 12
+  meleeEnterDistance: 2.5
+  meleeExitDistance: 3.2
   shootingRange: 6
-  preferredDistance: 4
+  hunterPreferredDistance: 6
+  hunterDistanceTolerance: 1
+  hunterRetreatSpeed: 2.5
+  predictionTime: 0.75
+  predictionAccuracy: 0.65
+  repositionCooldown: 3
+  interceptBurstMultiplier: 1.5
+  reactionDelay: 0.25
+  adaptationRampTime: 12
   meleeDamage: 15
   meleeCooldown: 1.5
   projectilePrefab: {fileID: 7075290965252656413, guid: 36e261f7ffd434c4abe53193f57901f0, type: 3}
@@ -203,6 +213,7 @@ MonoBehaviour:
   trapCooldown: 5
   trapSpawnDistance: 2.5
   animator: {fileID: 0}
+  debugNemesisAI: 0
   player: {fileID: 0}
 --- !u!95 &161483499655022726
 Animator:
